@@ -9,7 +9,7 @@ from io import BytesIO
 st.set_page_config(page_title="Pro Passport Photo Maker", page_icon="👤")
 
 st.title("📸 AI Passport Photo Maker")
-st.caption("HD Quality • Auto Background Removal • 630x810 Pixels")
+st.caption("HD Quality • 2026 Updated Background Removal • 630x810 Pixels")
 st.divider()
 
 # 2. Token Logic
@@ -25,14 +25,15 @@ def process_image(img_file, bg_color):
     TARGET_WIDTH = 630
     TARGET_HEIGHT = 810
     
-    # --- STEP 1: Background Removal ---
-    # We use the latest stable pointer for lucataco/remove-bg
-    st.write("🔄 Step 1: Removing background...")
+    # --- STEP 1: Background Removal (Using 851-labs version) ---
+    st.info("🔄 Step 1: Removing background...")
+    # This version is the stable 2026 standard
     bg_remove_output = replicate.run(
-        "lucataco/remove-bg",
+        "851-labs/background-remover:a029dff38972b5fda4ec5d75d7d1cd25aeff621d2cf4946a41055d7db66b80bc",
         input={"image": img_file}
     )
     
+    # Download the transparent image
     res = requests.get(bg_remove_output)
     foreground = Image.open(BytesIO(res.content)).convert("RGBA")
     
@@ -48,10 +49,10 @@ def process_image(img_file, bg_color):
     combined.save(buf, format="JPEG")
     buf.seek(0)
 
-    # --- STEP 4: HD Enhancement (CodeFormer) ---
-    st.write("✨ Step 2: Enhancing to HD Quality...")
+    # --- STEP 4: HD Enhancement (Using CodeFormer specific hash) ---
+    st.info("✨ Step 2: Enhancing to HD Quality...")
     hd_output = replicate.run(
-        "sczhou/codeformer",
+        "sczhou/codeformer:7de2ea26c616d5bf2245ad0d5e24f0ff9a6204578a5c876db53142edd9d2cd56",
         input={
             "image": buf,
             "upscale": 2,
@@ -80,20 +81,20 @@ if uploaded_file:
     
     if st.button("Generate Professional Passport Photo"):
         if not replicate_api_token:
-            st.error("Please add your Replicate API Token!")
+            st.error("Please add your Replicate API Token in the sidebar or Secrets!")
         else:
-            status_placeholder = st.empty()
-            with st.spinner("Processing..."):
-                try:
-                    selected_color = color_map[bg_choice]
-                    result = process_image(uploaded_file, selected_color)
-                    
-                    st.success("Professional Photo Ready!")
-                    st.image(result, caption="630x810 HD Passport Photo")
-                    
-                    # Download
-                    img_io = BytesIO()
-                    result.save(img_io, 'JPEG', quality=95)
-                    st.download_button("Download Image", img_io.getvalue(), "passport_pro.jpg", "image/jpeg")
-                except Exception as e:
-                    st.error(f"Error: {e}")
+            try:
+                result = process_image(uploaded_file, color_map[bg_choice])
+                
+                st.success("Professional Photo Ready!")
+                st.image(result, caption="630x810 HD Passport Photo")
+                
+                # Download Button
+                img_io = BytesIO()
+                result.save(img_io, 'JPEG', quality=95)
+                st.download_button("Download Image", img_io.getvalue(), "passport_pro.jpg", "image/jpeg")
+            except Exception as e:
+                st.error(f"Something went wrong: {e}")
+
+st.divider()
+st.caption("Note: Processing usually takes 15-20 seconds due to high-resolution AI rendering.")
