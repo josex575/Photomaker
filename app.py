@@ -6,38 +6,31 @@ from PIL import Image, ImageOps
 from io import BytesIO
 
 # 1. Page Configuration
-st.set_page_config(page_title="Professional Passport Photo Maker", page_icon="👤")
+st.set_page_config(page_title="Passport Photo Maker", page_icon="👤")
 
-st.markdown("""
-    <style>
-    .main-title { font-size: 42px; font-weight: bold; color: #1E3A8A; text-align: center; }
-    .subtitle { font-size: 18px; text-align: center; color: #6B7280; margin-bottom: 30px; }
-    </style>
-    <div class="main-title">AI Passport Photo Maker</div>
-    <div class="subtitle">Convert any portrait into a high-definition, 630x810 professional passport photo.</div>
-    """, unsafe_content_html=True)
+# Simplified Header to avoid the metrics_util error
+st.title("📸 AI Passport Photo Maker")
+st.caption("Convert any portrait into a high-definition 630x810 professional photo.")
+st.divider()
 
 # 2. API Token Setup
-# Replace with your actual token or set as a Streamlit Secret
-REPLICATE_API_TOKEN = st.sidebar.text_input("Enter Replicate API Token", type="password")
+# Use st.secrets for Streamlit Cloud or sidebar for local testing
+REPLICATE_API_TOKEN = st.sidebar.text_input("Replicate API Token", type="password")
 os.environ["REPLICATE_API_TOKEN"] = REPLICATE_API_TOKEN
 
 def process_image(img_file):
-    # Target dimensions
     TARGET_WIDTH = 630
     TARGET_HEIGHT = 810
     
-    # Step A: Initial Crop to Aspect Ratio (prevents stretching)
     img = Image.open(img_file)
-    target_ratio = TARGET_WIDTH / TARGET_HEIGHT
-    img = ImageOps.fit(img, (int(img.height * target_ratio), img.height), centering=(0.5, 0.5))
+    # This maintains the center of the face while fitting the 630x810 ratio
+    img = ImageOps.fit(img, (TARGET_WIDTH, TARGET_HEIGHT), centering=(0.5, 0.5))
 
-    # Step B: AI Enhancement via Replicate (CodeFormer)
-    # Using BytesIO to send the cropped image to the API
     buf = BytesIO()
     img.save(buf, format="JPEG")
     buf.seek(0)
 
+    # Call the HD restoration model
     output = replicate.run(
         "sczhou/codeformer:7de2ea4a3562fd1d33025cdd37ee571789abc300503e9f661351833e2bb74ad3",
         input={
@@ -49,42 +42,27 @@ def process_image(img_file):
         }
     )
 
-    # Step C: Final Resize to exact pixels
     response = requests.get(output)
     final_img = Image.open(BytesIO(response.content))
-    final_img = final_img.resize((TARGET_WIDTH, TARGET_HEIGHT), Image.Resampling.LANCZOS)
-    
-    return final_img
+    # Final precision resize
+    return final_img.resize((TARGET_WIDTH, TARGET_HEIGHT), Image.Resampling.LANCZOS)
 
-# 3. UI Logic
-uploaded_file = st.file_uploader("Upload your portrait", type=["jpg", "jpeg", "png"])
+# 3. UI
+uploaded_file = st.file_uploader("Upload your photo", type=["jpg", "png", "jpeg"])
 
 if uploaded_file:
-    st.image(uploaded_file, caption="Original Image", width=300)
-    
     if st.button("Generate HD Passport Photo"):
         if not REPLICATE_API_TOKEN:
-            st.error("Please enter your Replicate API Token in the sidebar.")
+            st.warning("Please enter your Replicate API Token in the sidebar.")
         else:
-            with st.spinner("Enhancing quality and cropping to 630x810..."):
+            with st.spinner("Processing..."):
                 try:
-                    result_img = process_image(uploaded_file)
+                    result = process_image(uploaded_file)
+                    st.image(result, caption="Final HD Result (630x810)")
                     
-                    st.success("Image Generated Successfully!")
-                    st.image(result_img, caption="HD Passport Photo (630x810)")
-                    
-                    # Download Button
-                    img_byte_arr = BytesIO()
-                    result_img.save(img_byte_arr, format='JPEG', quality=95)
-                    
-                    st.download_button(
-                        label="Download HD Photo",
-                        data=img_byte_arr.getvalue(),
-                        file_name="passport_photo_hd.jpg",
-                        mime="image/jpeg"
-                    )
+                    # Download link
+                    img_io = BytesIO()
+                    result.save(img_io, 'JPEG', quality=95)
+                    st.download_button("Download Image", img_io.getvalue(), "passport.jpg", "image/jpeg")
                 except Exception as e:
-                    st.error(f"Error: {e}")
-
-st.divider()
-st.info("Tip: For best results, ensure the face is well-lit and centered in the original photo.")
+                    st.error(f"Processing error: {e}")
