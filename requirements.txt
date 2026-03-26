@@ -1,5 +1,4 @@
 streamlit
 replicate
-pydantic>=2.0.0
 Pillow
 requests
