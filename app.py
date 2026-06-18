@@ -33,7 +33,7 @@ if uploaded_file is not None:
                 uploaded_file.seek(0)
                 image_bytes = uploaded_file.read()
                 
-                # 1. Generate content with image modality using the correct image generation model
+                # Generate content with image modality using the correct production model
                 response = client.models.generate_content(
                     model='gemini-2.5-flash-image',
                     contents=[
