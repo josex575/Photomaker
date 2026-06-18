@@ -33,21 +33,29 @@ if uploaded_file is not None:
                 uploaded_file.seek(0)
                 image_bytes = uploaded_file.read()
                 
-                # 1. Use the proper Image Generation model (Imagen 3) to generate the enhanced photo
-                result = client.models.generate_images(
-                    model='imagen-3.0-generate-002',
-                    prompt="A professional, high-definition passport portrait of the person in the source image. Clean, crisp details, soft professional studio lighting, fine skin and hair texture. The person must have a natural, neutral expression, facing directly forward. The background must be a perfectly solid, plain, light-colored off-white studio background with no patterns or shadows.",
-                    config=types.GenerateImagesConfig(
-                        number_of_images=1,
-                        aspect_ratio="3:4", # Closest preset to passport size
-                        output_mime_type="image/jpeg",
-                        person_generation="ALLOW_ADULT",
+                # 1. Generate content with image modality using the correct image generation model
+                response = client.models.generate_content(
+                    model='gemini-2.5-flash-image',
+                    contents=[
+                        types.Part.from_bytes(
+                            data=image_bytes,
+                            mime_type="image/jpeg"
+                        ),
+                        "Analyze the features of the person in this photo. Re-create and generate an enhanced, professional high-definition passport portrait matching this person exactly. Use clean, crisp textures, soft professional studio lighting, and fine skin details. The person must have a natural, neutral expression, facing directly forward. Set the background to a perfectly solid, plain, light-colored off-white studio background with no patterns or shadows."
+                    ],
+                    config=types.GenerateContentConfig(
+                        response_modalities=["IMAGE"],
                     )
                 )
                 
-                # Extract the generated image correctly from the SDK response
-                generated_image_bytes = result.generated_images[0].image.image_bytes
-                generated_image = Image.open(io.BytesIO(generated_image_bytes))
+                # Extract the inline image data from the response parts
+                image_parts = [part for part in response.candidates[0].content.parts if part.inline_data]
+                
+                if not image_parts:
+                    st.error("The model did not return a generated image. Please try adjusting your prompt or checking your API permissions.")
+                    st.stop()
+                    
+                generated_image = Image.open(io.BytesIO(image_parts[0].inline_data.data))
                 
                 # 2. Precise Crop & Resize to exactly 630 x 810 pixels
                 target_width = 630
