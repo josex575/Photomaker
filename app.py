@@ -1,73 +1,104 @@
 import streamlit as st
 from google import genai
 from google.genai import types
-from rembg import remove, new_session
-from PIL import Image, ImageOps
+from PIL import Image
 import io
-import os
 
-# 1. Setup Streamlit UI
-st.set_page_config(page_title="Gemini Passport Agent", page_icon="🤖")
-st.title("🤖 Gemini Passport AI Agent")
-st.caption("Chat with Gemini to process your professional 630x810 photos.")
+# Set up page configuration
+st.set_page_config(page_title="HD Passport Photo Generator", layout="centered")
+st.title("📸 HD Passport Photo Enhancer")
+st.write("Upload a portrait to enhance it, resize it to 630x810, and keep it under 100 KB.")
 
-# 2. Get Gemini API Key from Secrets
-if "GEMINI_API_KEY" not in st.secrets:
-    api_key = st.sidebar.text_input("Enter Gemini API Key", type="password")
-else:
+# 1. Securely fetch the API key from Streamlit Secrets
+# (You will set this up in the Streamlit Cloud dashboard settings)
+if "GEMINI_API_KEY" in st.secrets:
     api_key = st.secrets["GEMINI_API_KEY"]
-
-# --- THE TOOL DEFINITION ---
-def generate_passport_photo(image_bytes: bytes) -> Image.Image:
-    """
-    Removes background and resizes an image to 630x810 for a passport.
-    Args:
-        image_bytes: The raw bytes of the uploaded image.
-    """
-    session = new_session("u2netp") # Lightweight free model
-    no_bg_bytes = remove(image_bytes, session=session)
-    foreground = Image.open(io.BytesIO(no_bg_bytes)).convert("RGBA")
-    
-    # Add White Background
-    white_bg = Image.new("RGBA", foreground.size, (255, 255, 255, 255))
-    combined = Image.alpha_composite(white_bg, foreground).convert("RGB")
-    
-    # Final 630x810 Crop
-    return ImageOps.fit(combined, (630, 810), Image.Resampling.LANCZOS)
-
-# --- GEMINI AGENT LOGIC ---
-if api_key:
-    client = genai.Client(api_key=api_key)
-    
-    uploaded_file = st.file_uploader("Upload your portrait", type=["jpg", "png", "jpeg"])
-    
-    if uploaded_file:
-        user_msg = st.chat_input("Ex: 'Convert this to a passport photo for me'")
-        
-        if user_msg:
-            with st.chat_message("user"):
-                st.write(user_msg)
-            
-            with st.chat_message("assistant"):
-                with st.spinner("Gemini is thinking..."):
-                    # Here, Gemini decides if it needs the tool
-                    # For this demo, we execute the tool directly if requested
-                    if "passport" in user_msg.lower():
-                        st.write("I'll process that for you right now...")
-                        
-                        # Execute your local "Tool"
-                        final_img = generate_passport_photo(uploaded_file.getvalue())
-                        
-                        st.image(final_img, caption="630x810 Passport Photo")
-                        
-                        # Download Link
-                        buf = io.BytesIO()
-                        final_img.save(buf, format="JPEG")
-                        st.download_button("Download Result", buf.getvalue(), "passport.jpg")
-                    else:
-                        st.write("I'm ready. Tell me to 'make a passport photo' and I will use my tools!")
 else:
-    st.warning("Please provide a Gemini API Key to start the agent.")
+    st.error("Please configure your GEMINI_API_KEY in the Streamlit Secrets.")
+    st.stop()
 
-st.divider()
-st.info("This app uses Gemini as the brain and your local server as the hands.")
+# Initialize the GenAI Client
+client = genai.Client(api_key=api_key)
+
+# File uploader widget
+uploaded_file = st.file_uploader("Choose an image...", type=["jpg", "jpeg", "png"])
+
+if uploaded_file is not None:
+    # Display the original image
+    original_image = Image.open(uploaded_file)
+    st.image(original_image, caption="Original Uploaded Image", use_container_width=True)
+    
+    if st.button("Enhance & Format Image"):
+        with st.spinner("Enhancing image to HD quality..."):
+            try:
+                # Convert uploaded file to bytes for the API
+                uploaded_file.seek(0)
+                image_bytes = uploaded_file.read()
+                
+                # Request the AI model to enhance the portrait seamlessly
+                response = client.models.generate_content(
+                    model='gemini-2.5-flash', # or your preferred multimodal model
+                    contents=[
+                        types.Part.from_bytes(
+                            data=image_bytes,
+                            mime_type="image/jpeg"
+                        ),
+                        "Enhance this passport portrait into high definition with professional studio lighting, fine skin details, crisp hair texture, and a clean, plain, light-colored background suitable for official documentation."
+                    ]
+                )
+                
+                # Extract and read the generated image from response
+                # Note: Adjust extraction based on your specific pipeline output format
+                generated_image = Image.open(io.BytesIO(response.candidates[0].content.parts[0].inline_data.data))
+                
+                st.success("Image enhanced successfully! Formatting geometry...")
+                
+                # 2. Resize and crop to exactly 630 x 810 pixels
+                target_width = 630
+                target_height = 810
+                
+                # Crop to aspect ratio first to prevent stretching
+                orig_width, orig_height = generated_image.size
+                target_ratio = target_width / target_height
+                orig_ratio = orig_width / orig_height
+                
+                if orig_ratio > target_ratio:
+                    # Image is too wide
+                    new_width = int(orig_height * target_ratio)
+                    left = (orig_width - new_width) / 2
+                    cropped_image = generated_image.crop((left, 0, left + new_width, orig_height))
+                else:
+                    # Image is too tall
+                    new_height = int(orig_width / target_ratio)
+                    top = (orig_height - new_height) / 2
+                    cropped_image = generated_image.crop((0, top, orig_width, top + new_height))
+                
+                final_image = cropped_image.resize((target_width, target_height), Image.Resampling.LANCZOS)
+                
+                # 3. Optimize compression to keep file size under 100 KB
+                img_buffer = io.BytesIO()
+                quality = 95
+                
+                while quality > 10:
+                    img_buffer.seek(0)
+                    img_buffer.truncate(0)
+                    final_image.save(img_buffer, format="JPEG", quality=quality, optimize=True)
+                    file_size_kb = img_buffer.tell() / 1024
+                    
+                    if file_size_kb < 100:
+                        break
+                    quality -= 5  # Reduce quality stepwise until it hits the threshold
+                
+                # Display final result
+                st.image(final_image, caption=f"Final HD Image (Size: {file_size_kb:.1f} KB | 630x810)", use_container_width=True)
+                
+                # Download button
+                st.download_button(
+                    label="Download Formatted Photo",
+                    data=img_buffer.getvalue(),
+                    file_name="passport_photo_hd.jpg",
+                    mime="image/jpeg"
+                )
+                
+            except Exception as e:
+                st.error(f"An error occurred during processing: {e}")
