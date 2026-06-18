@@ -9,8 +9,7 @@ st.set_page_config(page_title="HD Passport Photo Generator", layout="centered")
 st.title("📸 HD Passport Photo Enhancer")
 st.write("Upload a portrait to enhance it, resize it to 630x810, and keep it under 100 KB.")
 
-# 1. Securely fetch the API key from Streamlit Secrets
-# (You will set this up in the Streamlit Cloud dashboard settings)
+# Securely fetch the API key from Streamlit Secrets
 if "GEMINI_API_KEY" in st.secrets:
     api_key = st.secrets["GEMINI_API_KEY"]
 else:
@@ -24,9 +23,9 @@ client = genai.Client(api_key=api_key)
 uploaded_file = st.file_uploader("Choose an image...", type=["jpg", "jpeg", "png"])
 
 if uploaded_file is not None:
-    # Display the original image
+    # Display the original image using the updated 'width' syntax
     original_image = Image.open(uploaded_file)
-    st.image(original_image, caption="Original Uploaded Image", use_container_width=True)
+    st.image(original_image, caption="Original Uploaded Image", width='stretch')
     
     if st.button("Enhance & Format Image"):
         with st.spinner("Enhancing image to HD quality..."):
@@ -37,7 +36,7 @@ if uploaded_file is not None:
                 
                 # Request the AI model to enhance the portrait seamlessly
                 response = client.models.generate_content(
-                    model='gemini-2.5-flash', # or your preferred multimodal model
+                    model='gemini-2.5-flash',
                     contents=[
                         types.Part.from_bytes(
                             data=image_bytes,
@@ -48,7 +47,6 @@ if uploaded_file is not None:
                 )
                 
                 # Extract and read the generated image from response
-                # Note: Adjust extraction based on your specific pipeline output format
                 generated_image = Image.open(io.BytesIO(response.candidates[0].content.parts[0].inline_data.data))
                 
                 st.success("Image enhanced successfully! Formatting geometry...")
@@ -75,7 +73,7 @@ if uploaded_file is not None:
                 
                 final_image = cropped_image.resize((target_width, target_height), Image.Resampling.LANCZOS)
                 
-                # 3. Optimize compression to keep file size under 100 KB
+                # 3. Optimize compression to keep file size strictly under 100 KB
                 img_buffer = io.BytesIO()
                 quality = 95
                 
@@ -89,8 +87,8 @@ if uploaded_file is not None:
                         break
                     quality -= 5  # Reduce quality stepwise until it hits the threshold
                 
-                # Display final result
-                st.image(final_image, caption=f"Final HD Image (Size: {file_size_kb:.1f} KB | 630x810)", use_container_width=True)
+                # Display final result using updated 'width' syntax
+                st.image(final_image, caption=f"Final HD Image (Size: {file_size_kb:.1f} KB | 630x810)", width='stretch')
                 
                 # Download button
                 st.download_button(
